@@ -5,7 +5,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// ✅ Root GET (for browser check)
+// ✅ Root GET (browser check)
 app.get("/", (req, res) => {
     res.send("Healthcare MCP Server Running ✅");
 });
@@ -32,7 +32,7 @@ app.get("/.well-known/mcp", (req, res) => {
     });
 });
 
-// ✅ Direct tool endpoint (optional but useful)
+// ✅ Direct tool endpoint (optional)
 app.post("/tools/get_patient_summary", (req, res) => {
     const { patient_id } = req.body;
 
@@ -45,13 +45,26 @@ app.post("/tools/get_patient_summary", (req, res) => {
     });
 });
 
-// ✅ MCP main handler (THIS FIXES YOUR ERROR)
+// ✅ MCP main handler (FIXED — supports all formats)
 app.post("/", (req, res) => {
     try {
-        const { tool, input } = req.body;
+        console.log("Incoming MCP request:", req.body); // helpful for debugging
 
-        if (tool === "get_patient_summary") {
-            const { patient_id } = input || {};
+        // Support ALL possible formats
+        const toolName =
+            req.body.tool ||
+            req.body.name ||
+            req.body.action ||
+            req.body.function_name;
+
+        const input =
+            req.body.input ||
+            req.body.arguments ||
+            req.body.params ||
+            {};
+
+        if (toolName === "get_patient_summary") {
+            const { patient_id } = input;
 
             return res.json({
                 patient_id,
@@ -64,6 +77,7 @@ app.post("/", (req, res) => {
 
         return res.status(400).json({
             error: "Unknown tool",
+            received: req.body // helps debugging if still fails
         });
 
     } catch (err) {
@@ -74,7 +88,7 @@ app.post("/", (req, res) => {
     }
 });
 
-// ✅ Health check (Render stability)
+// ✅ Health check
 app.get("/healthz", (req, res) => {
     res.send("OK");
 });
