@@ -76,7 +76,17 @@ app.post("/", async (req, res) => {
           capabilities: {
             tools: {},
             extensions: {
-              fhir: true
+              "ai.promptopinion/fhir-context": {
+                scopes: [
+                  {
+                    name: "patient/Patient.rs",
+                    required: true
+                  },
+                  {
+                    name: "patient/Condition.rs"
+                  }
+                ]
+              }
             }
           },
           serverInfo: {
