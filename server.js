@@ -10,6 +10,10 @@ app.get("/", (req, res) => {
     res.send("MCP Server Running 🚀");
 });
 
+app.get("/healthz", (req, res) => {
+    res.send("OK");
+});
+
 // 🟢 MCP Metadata
 app.get("/.well-known/mcp", (req, res) => {
     res.json({
@@ -18,7 +22,7 @@ app.get("/.well-known/mcp", (req, res) => {
         tools: [
             {
                 name: "get_patient_summary",
-                description: "Fetch patient summary",
+                description: "Fetch patient summary from FHIR",
                 input_schema: {
                     type: "object",
                     properties: {},
@@ -29,21 +33,20 @@ app.get("/.well-known/mcp", (req, res) => {
     });
 });
 
-// 🔥 Helper to safely read headers
+// 🔥 Safe header getter
 function getHeader(req, key) {
     return (
         req.headers[key] ||
-        req.headers[key?.toLowerCase()] ||
-        req.headers[key?.toUpperCase()]
+        req.headers[key.toLowerCase()] ||
+        req.headers[key.toUpperCase()]
     );
 }
 
-// 🟢 MCP handler
+// 🔥 MAIN MCP HANDLER
 app.post("/", async (req, res) => {
-    console.log("HEADERS:", req.headers);
-    try {
-        const { method, params, id } = req.body;
+    const { method, params, id } = req.body;
 
+    try {
         if (method !== "tools/call") {
             return res.json({
                 jsonrpc: "2.0",
@@ -60,15 +63,18 @@ app.post("/", async (req, res) => {
             });
         }
 
-        // 🔥 FHIR HEADERS
+        // 🔥 Extract headers
         const fhirBase = getHeader(req, "x-fhir-server-url");
         const token = getHeader(req, "x-fhir-access-token");
         const patientId = getHeader(req, "x-patient-id");
 
-        console.log("HEADERS:", req.headers);
+        console.log("📦 HEADERS:", {
+            fhirBase,
+            patientId
+        });
 
-        // ⚠️ Render fallback (if headers missing)
-        if (!fhirBase || !patientId) {
+        // 🚨 If no patient selected → return clean response (NO crash)
+        if (!patientId) {
             return res.json({
                 jsonrpc: "2.0",
                 id,
@@ -77,10 +83,7 @@ app.post("/", async (req, res) => {
                         {
                             type: "text",
                             text: JSON.stringify({
-                                patient_id: "patient-123",
-                                name: "Anusha Gayam",
-                                conditions: ["Diabetes"],
-                                summary: "Anusha Gayam has Diabetes"
+                                message: "No patient selected. Please select a FHIR-backed patient."
                             })
                         }
                     ]
@@ -88,34 +91,64 @@ app.post("/", async (req, res) => {
             });
         }
 
-        // 🔹 Fetch patient
-        const patientRes = await fetch(`${fhirBase}/Patient/${patientId}`, {
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        });
+        // 🚨 If FHIR base missing
+        if (!fhirBase || !token) {
+            return res.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                    content: [
+                        {
+                            type: "text",
+                            text: JSON.stringify({
+                                message: "FHIR context missing"
+                            })
+                        }
+                    ]
+                }
+            });
+        }
 
-        const patient = await patientRes.json();
+        // 🔹 Fetch Patient
+        let patient = {};
+        try {
+            const patientRes = await fetch(`${fhirBase}/Patient/${patientId}`, {
+                headers: {
+                    Authorization: `Bearer ${token}`
+                }
+            });
+
+            patient = await patientRes.json();
+        } catch (err) {
+            console.error("❌ Patient fetch error:", err.message);
+        }
 
         const name =
             (patient.name?.[0]?.given?.join(" ") || "") +
             " " +
             (patient.name?.[0]?.family || "");
 
-        // 🔹 Fetch conditions
-        const condRes = await fetch(
-            `${fhirBase}/Condition?patient=${patientId}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${token}`
+        // 🔹 Fetch Conditions
+        let conditions = [];
+        try {
+            const condRes = await fetch(
+                `${fhirBase}/Condition?patient=${patientId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
                 }
-            }
-        );
+            );
 
-        const condData = await condRes.json();
+            const condData = await condRes.json();
 
-        const conditions =
-            condData.entry?.map(c => c.resource.code?.text || "Unknown") || [];
+            conditions =
+                condData.entry?.map(
+                    (c) => c.resource.code?.text || "Unknown"
+                ) || [];
+        } catch (err) {
+            console.error("❌ Condition fetch error:", err.message);
+        }
 
         const result = {
             patient_id: patientId,
@@ -141,16 +174,19 @@ app.post("/", async (req, res) => {
         });
 
     } catch (error) {
-        console.error("ERROR:", error.message);
+        console.error("❌ SERVER ERROR:", error.message);
 
         return res.json({
             jsonrpc: "2.0",
-            id: 1,
-            error: { message: "Server error" }
+            id: id || 1,
+            error: {
+                message: "Server error",
+                details: error.message
+            }
         });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`MCP running on ${PORT}`);
+    console.log(`MCP Server running on ${PORT}`);
 });
