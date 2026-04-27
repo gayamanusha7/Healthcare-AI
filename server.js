@@ -34,7 +34,7 @@ const getHeader = (req, key) =>
   req.headers[key.toLowerCase()] ||
   req.headers[key.toUpperCase()];
 
-// 🔧 Decode JWT payload (used for fallback)
+// 🔧 Decode JWT
 function decodeJwtPayload(token) {
   try {
     const payload = token.split(".")[1];
@@ -44,7 +44,7 @@ function decodeJwtPayload(token) {
   }
 }
 
-// 🔧 Find patient by name (fallback if no x-patient-id)
+// 🔧 Find patient by name (fallback)
 async function findPatientIdByName(fhirBase, token, given, family) {
   if (!given && !family) return null;
 
@@ -66,25 +66,34 @@ app.post("/", async (req, res) => {
   const { method, params, id } = req.body || {};
 
   try {
-    // ✅ IMPORTANT: Handle initialization / unknown calls
-    if (!method || method !== "tools/call") {
+    // ✅ 🔥 CRITICAL: HANDLE INITIALIZE (this fixes your error)
+    if (method === "initialize") {
       return res.json({
         jsonrpc: "2.0",
         id: id || 1,
         result: {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                message: "MCP initialized successfully"
-              })
-            }
-          ]
+          protocolVersion: "2025-11-25",
+          capabilities: {
+            tools: {}
+          },
+          serverInfo: {
+            name: "Patient Summary MCP",
+            version: "1.0.0"
+          }
         }
       });
     }
 
-    // ✅ Handle unknown tools safely
+    // ✅ Handle other non-tool calls safely
+    if (method !== "tools/call") {
+      return res.json({
+        jsonrpc: "2.0",
+        id: id || 1,
+        result: {}
+      });
+    }
+
+    // ✅ Handle tool validation
     if (params?.name !== "get_patient_summary") {
       return res.json({
         jsonrpc: "2.0",
@@ -109,13 +118,11 @@ app.post("/", async (req, res) => {
 
     console.log("📦 HEADERS:", { fhirBase, patientId });
 
-    // 🔥 Fallback: resolve patient from token if missing
+    // 🔥 Fallback: resolve patient from token
     if (!patientId && token && fhirBase) {
       const payload = decodeJwtPayload(token);
       const given = payload?.given_name || "";
       const family = payload?.family_name || "";
-
-      console.log("🔍 Resolving patient:", { given, family });
 
       try {
         patientId = await findPatientIdByName(fhirBase, token, given, family);
@@ -124,7 +131,7 @@ app.post("/", async (req, res) => {
       }
     }
 
-    // 🚨 Still no patient → safe response
+    // 🚨 If still no patient
     if (!patientId) {
       return res.json({
         jsonrpc: "2.0",
@@ -164,6 +171,7 @@ app.post("/", async (req, res) => {
       const cRes = await fetch(`${fhirBase}/Condition?patient=${patientId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
       const cData = await cRes.json();
 
       conditions =
@@ -184,7 +192,7 @@ app.post("/", async (req, res) => {
           : `${name} has no recorded conditions`
     };
 
-    // ✅ ALWAYS return valid JSON-RPC
+    // ✅ FINAL RESPONSE
     return res.json({
       jsonrpc: "2.0",
       id: id || 1,
@@ -201,7 +209,6 @@ app.post("/", async (req, res) => {
   } catch (error) {
     console.error("❌ SERVER ERROR:", error.message);
 
-    // ✅ Never fail silently
     return res.json({
       jsonrpc: "2.0",
       id: id || 1,
