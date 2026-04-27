@@ -74,7 +74,10 @@ app.post("/", async (req, res) => {
         result: {
           protocolVersion: "2025-11-25",
           capabilities: {
-            tools: {}
+            tools: {},
+            extensions: {
+              fhir: true
+            }
           },
           serverInfo: {
             name: "Patient Summary MCP",
