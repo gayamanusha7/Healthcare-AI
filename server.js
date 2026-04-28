@@ -237,16 +237,17 @@ app.post("/", async (req, res) => {
             type: "text",
             text: `Patient Summary:
 
-Name: ${name.trim() || "Unknown"}
-Gender: ${gender}
-DOB: ${dob}
-Conditions: ${
-              conditions.length > 0
-                ? conditions.join(", ")
-                : "No known conditions"
-            }
-
-${summaryText}`
+            Name: ${name.trim() || "Unknown"}
+            Gender: ${gender}
+            DOB: ${dob}
+            Conditions: ${
+                          conditions.length > 0
+                            ? conditions.join(", ")
+                            : "No known conditions"
+                        }
+            
+            ${summaryText}`
+            console.log("FINAL TEXT:", summaryText);
           }
         ]
       }
