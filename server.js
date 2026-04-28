@@ -18,7 +18,7 @@ app.get("/.well-known/mcp", (req, res) => {
       {
         name: "get_patient_summary",
         description: "Fetch patient summary from FHIR",
-        input_schema: {
+        inputSchema: {   // ✅ FIXED (consistent)
           type: "object",
           properties: {},
           required: []
@@ -34,7 +34,7 @@ const getHeader = (req, key) =>
   req.headers[key.toLowerCase()] ||
   req.headers[key.toUpperCase()];
 
-// 🔧 JWT decode (fallback)
+// 🔧 JWT decode
 function decodeJwtPayload(token) {
   try {
     const payload = token.split(".")[1];
@@ -121,12 +121,16 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // ❌ ignore other methods safely
+    // ❌ HANDLE OTHER METHODS SAFELY (FIX)
     if (method !== "tools/call") {
       return res.json({
         jsonrpc: "2.0",
         id: id || 1,
-        result: {}
+        result: {
+          content: [
+            { type: "text", text: `Unhandled method: ${method}` }
+          ]
+        }
       });
     }
 
@@ -136,7 +140,9 @@ app.post("/", async (req, res) => {
         jsonrpc: "2.0",
         id,
         result: {
-          content: [{ type: "text", text: "Invalid tool request" }]
+          content: [
+            { type: "text", text: "Invalid tool request" }
+          ]
         }
       });
     }
@@ -164,7 +170,9 @@ app.post("/", async (req, res) => {
         jsonrpc: "2.0",
         id,
         result: {
-          content: [{ type: "text", text: "No patient selected or found" }]
+          content: [
+            { type: "text", text: "No patient selected or found" }
+          ]
         }
       });
     }
@@ -179,7 +187,9 @@ app.post("/", async (req, res) => {
         jsonrpc: "2.0",
         id,
         result: {
-          content: [{ type: "text", text: "Access denied for this patient" }]
+          content: [
+            { type: "text", text: "Access denied for this patient" }
+          ]
         }
       });
     }
@@ -222,7 +232,7 @@ app.post("/", async (req, res) => {
 
     console.log("FINAL TEXT:", summaryText);
 
-    // ✅ FINAL RESPONSE
+    // ✅ FINAL RESPONSE (GUARANTEED CONTENT)
     return res.json({
       jsonrpc: "2.0",
       id,
@@ -254,7 +264,9 @@ ${summaryText}`
       jsonrpc: "2.0",
       id,
       result: {
-        content: [{ type: "text", text: "Internal error" }]
+        content: [
+          { type: "text", text: "Internal error" }
+        ]
       }
     });
   }
