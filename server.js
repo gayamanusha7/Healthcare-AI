@@ -48,6 +48,7 @@ app.post("/", async (req, res) => {
         id,
         result: {
           protocolVersion: "2025-11-25",
+    
           capabilities: {
             tools: {},
             extensions: {
@@ -58,6 +59,11 @@ app.post("/", async (req, res) => {
                 ]
               }
             }
+          },
+    
+          serverInfo: {
+            name: "Patient Summary MCP",
+            version: "1.0.0"
           }
         }
       });
