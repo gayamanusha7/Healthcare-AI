@@ -67,6 +67,7 @@ app.post("/", async (req, res) => {
   const { method, params, id } = req.body || {};
   console.log("METHOD:", method);
   console.log("PARAMS:", params);
+
   try {
     // ✅ INITIALIZE
     if (method === "initialize") {
@@ -94,7 +95,7 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // ✅ Notifications
+    // ✅ notifications
     if (method === "notifications/initialized") {
       return res.json({ jsonrpc: "2.0", result: {} });
     }
@@ -120,60 +121,27 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // 🔥 ALWAYS HANDLE tools/call SAFELY
-    if (method === "tools/call") {
-    
-      if (!params || params.name !== "get_patient_summary") {
-        return res.json({
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [
-              {
-                type: "text",
-                text: "Invalid tool request"
-              }
-            ]
-          }
-        });
-      }
-    
-      // 👉 your full logic here (FHIR calls etc.)
-    
-    } else {
-      // ✅ IMPORTANT: do NOT send empty result blindly
+    // ❌ ignore other methods safely
+    if (method !== "tools/call") {
       return res.json({
         jsonrpc: "2.0",
         id: id || 1,
-        result: {
-          content: [
-            {
-              type: "text",
-              text: `Unhandled method: ${method}`
-            }
-          ]
-        }
+        result: {}
       });
     }
-    // 🔥 SAFE PARAM CHECK (FIXED)
-    if (!params || params.name !== "get_patient_summary") {
-      console.log("⚠️ Invalid params:", params);
 
+    // 🔥 VALIDATE TOOL
+    if (!params || params.name !== "get_patient_summary") {
       return res.json({
         jsonrpc: "2.0",
         id,
         result: {
-          content: [
-            {
-              type: "text",
-              text: "Invalid tool request"
-            }
-          ]
+          content: [{ type: "text", text: "Invalid tool request" }]
         }
       });
     }
 
-    // 🔹 Headers
+    // 🔹 HEADERS
     const fhirBase = getHeader(req, "x-fhir-server-url");
     const token = getHeader(req, "x-fhir-access-token");
     let patientId = getHeader(req, "x-patient-id");
@@ -196,17 +164,12 @@ app.post("/", async (req, res) => {
         jsonrpc: "2.0",
         id,
         result: {
-          content: [
-            {
-              type: "text",
-              text: "No patient selected or found"
-            }
-          ]
+          content: [{ type: "text", text: "No patient selected or found" }]
         }
       });
     }
 
-    // 🔹 Fetch Patient
+    // 🔹 PATIENT FETCH
     const pRes = await fetch(`${fhirBase}/Patient/${patientId}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
@@ -216,12 +179,7 @@ app.post("/", async (req, res) => {
         jsonrpc: "2.0",
         id,
         result: {
-          content: [
-            {
-              type: "text",
-              text: "Access denied for this patient. Please reselect."
-            }
-          ]
+          content: [{ type: "text", text: "Access denied for this patient" }]
         }
       });
     }
@@ -236,7 +194,7 @@ app.post("/", async (req, res) => {
     const gender = patient.gender || "Unknown";
     const dob = patient.birthDate || "Unknown";
 
-    // 🔹 Conditions
+    // 🔹 CONDITIONS
     let conditions = [];
     try {
       const cRes = await fetch(
@@ -253,10 +211,10 @@ app.post("/", async (req, res) => {
           (c) => c.resource.code?.text || "Unknown"
         ) || [];
     } catch (e) {
-      console.error("❌ Condition error:", e.message);
+      console.error("Condition error:", e.message);
     }
 
-    // 🔥 Summary
+    // 🔥 SUMMARY
     const summaryText =
       conditions.length === 0
         ? `${name.trim()} has no known medical conditions recorded.`
@@ -264,7 +222,7 @@ app.post("/", async (req, res) => {
 
     console.log("FINAL TEXT:", summaryText);
 
-    // ✅ FINAL RESPONSE (always returns content)
+    // ✅ FINAL RESPONSE
     return res.json({
       jsonrpc: "2.0",
       id,
@@ -290,18 +248,13 @@ ${summaryText}`
     });
 
   } catch (error) {
-    console.error("❌ SERVER ERROR:", error.message);
+    console.error("❌ ERROR:", error);
 
     return res.json({
       jsonrpc: "2.0",
       id,
       result: {
-        content: [
-          {
-            type: "text",
-            text: "Something went wrong. Please try again."
-          }
-        ]
+        content: [{ type: "text", text: "Internal error" }]
       }
     });
   }
