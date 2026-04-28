@@ -231,14 +231,23 @@ app.post("/", async (req, res) => {
     };
 
     // ✅ FINAL RESPONSE
-    return res.json({
+   return res.json({
       jsonrpc: "2.0",
-      id: id || 1,
+      id,
       result: {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result)
+            text: `Patient Summary:
+    
+    Name: ${result.name}
+    Conditions: ${
+              result.conditions.length > 0
+                ? result.conditions.join(", ")
+                : "No known conditions"
+            }
+    
+    Summary: ${result.summary}`
           }
         ]
       }
