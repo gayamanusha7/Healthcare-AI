@@ -66,7 +66,7 @@ app.post("/", async (req, res) => {
   const { method, params, id } = req.body || {};
 
   try {
-    // ✅ 🔥 CRITICAL: HANDLE INITIALIZE (this fixes your error)
+    // ✅ INITIALIZE
     if (method === "initialize") {
       return res.json({
         jsonrpc: "2.0",
@@ -78,13 +78,8 @@ app.post("/", async (req, res) => {
             extensions: {
               "ai.promptopinion/fhir-context": {
                 scopes: [
-                  {
-                    name: "patient/Patient.rs",
-                    required: true
-                  },
-                  {
-                    name: "patient/Condition.rs"
-                  }
+                  { name: "patient/Patient.rs", required: true },
+                  { name: "patient/Condition.rs" }
                 ]
               }
             }
@@ -96,13 +91,15 @@ app.post("/", async (req, res) => {
         }
       });
     }
+
     if (method === "notifications/initialized") {
       return res.json({
         jsonrpc: "2.0",
         result: {}
       });
     }
-    // ✅ HANDLE tools/list (CRITICAL)
+
+    // ✅ tools/list
     if (method === "tools/list") {
       return res.json({
         jsonrpc: "2.0",
@@ -122,7 +119,7 @@ app.post("/", async (req, res) => {
         }
       });
     }
-    // ✅ Handle other non-tool calls safely
+
     if (method !== "tools/call") {
       return res.json({
         jsonrpc: "2.0",
@@ -131,56 +128,41 @@ app.post("/", async (req, res) => {
       });
     }
 
-    // ✅ Handle tool validation
     if (params?.name !== "get_patient_summary") {
       return res.json({
         jsonrpc: "2.0",
-        id: id || 1,
+        id,
         result: {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                message: "Unknown tool"
-              })
-            }
-          ]
+          content: [{ type: "text", text: "Unknown tool" }]
         }
       });
     }
 
-    // 🔹 Extract headers
+    // 🔹 Headers
     const fhirBase = getHeader(req, "x-fhir-server-url");
     const token = getHeader(req, "x-fhir-access-token");
     let patientId = getHeader(req, "x-patient-id");
 
     console.log("📦 HEADERS:", { fhirBase, patientId });
 
-    // 🔥 Fallback: resolve patient from token
+    // 🔥 fallback patient resolve
     if (!patientId && token && fhirBase) {
       const payload = decodeJwtPayload(token);
       const given = payload?.given_name || "";
       const family = payload?.family_name || "";
 
-      try {
-        patientId = await findPatientIdByName(fhirBase, token, given, family);
-      } catch (e) {
-        console.error("❌ Patient lookup failed:", e.message);
-      }
+      patientId = await findPatientIdByName(fhirBase, token, given, family);
     }
 
-    // 🚨 If still no patient
     if (!patientId) {
       return res.json({
         jsonrpc: "2.0",
-        id: id || 1,
+        id,
         result: {
           content: [
             {
               type: "text",
-              text: JSON.stringify({
-                message: "No patient selected or found"
-              })
+              text: "No patient selected or found"
             }
           ]
         }
@@ -189,19 +171,35 @@ app.post("/", async (req, res) => {
 
     // 🔹 Fetch Patient
     let patient = {};
-    try {
-      const pRes = await fetch(`${fhirBase}/Patient/${patientId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+    const pRes = await fetch(`${fhirBase}/Patient/${patientId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    // ✅ 403 handling
+    if (pRes.status === 403) {
+      return res.json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: "Access denied for this patient. Please reselect the patient."
+            }
+          ]
+        }
       });
-      patient = await pRes.json();
-    } catch (e) {
-      console.error("❌ Patient fetch error:", e.message);
     }
+
+    patient = await pRes.json();
 
     const name =
       (patient.name?.[0]?.given?.join(" ") || "") +
       " " +
       (patient.name?.[0]?.family || "");
+
+    const gender = patient.gender || "Unknown";
+    const dob = patient.birthDate || "Unknown";
 
     // 🔹 Fetch Conditions
     let conditions = [];
@@ -220,18 +218,17 @@ app.post("/", async (req, res) => {
       console.error("❌ Condition fetch error:", e.message);
     }
 
-    const result = {
-      patient_id: patientId,
-      name: name.trim() || "Unknown",
-      conditions,
-      summary:
-        conditions.length > 0
-          ? `${name} has ${conditions.join(", ")}`
-          : `${name} has no recorded conditions`
-    };
+    // 🔥 Better summary
+    let summaryText = "";
 
-    // ✅ FINAL RESPONSE
-   return res.json({
+    if (conditions.length === 0) {
+      summaryText = `${name.trim()} has no known medical conditions recorded.`;
+    } else {
+      summaryText = `${name.trim()} has ${conditions.join(", ")}.`;
+    }
+
+    // ✅ Final response (clear text)
+    return res.json({
       jsonrpc: "2.0",
       id,
       result: {
@@ -239,15 +236,17 @@ app.post("/", async (req, res) => {
           {
             type: "text",
             text: `Patient Summary:
-    
-    Name: ${result.name}
-    Conditions: ${
-              result.conditions.length > 0
-                ? result.conditions.join(", ")
+
+Name: ${name.trim() || "Unknown"}
+Gender: ${gender}
+DOB: ${dob}
+Conditions: ${
+              conditions.length > 0
+                ? conditions.join(", ")
                 : "No known conditions"
             }
-    
-    Summary: ${result.summary}`
+
+${summaryText}`
           }
         ]
       }
@@ -258,15 +257,12 @@ app.post("/", async (req, res) => {
 
     return res.json({
       jsonrpc: "2.0",
-      id: id || 1,
+      id,
       result: {
         content: [
           {
             type: "text",
-            text: JSON.stringify({
-              message: "Fallback response",
-              error: error.message
-            })
+            text: "Something went wrong. Please try again."
           }
         ]
       }
@@ -274,7 +270,7 @@ app.post("/", async (req, res) => {
   }
 });
 
-// 🟢 Start server
+// 🟢 Start
 app.listen(PORT, () => {
   console.log(`MCP Server running on ${PORT}`);
 });
